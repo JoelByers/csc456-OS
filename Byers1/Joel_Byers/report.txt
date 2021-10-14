@@ -1,0 +1,19 @@
+Joel Byers
+Assignment 1
+Report
+
+COMPILING:
+    Compiled on Windows Subsystem for Linux 20.04.3 LTS using g++.
+    To compile, type: 
+        
+        g++ shell.cpp
+
+USAGE:
+    To start program, type:
+
+        ./a.out
+
+    From here, you can enter any Ubuntu command.
+    To quit program, type:
+
+        exit
