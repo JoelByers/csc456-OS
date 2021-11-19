@@ -1,3 +1,14 @@
+/*
+    Joel Byers
+    csc 456 
+    Assignment 2
+    Due 10/17/21
+
+    Description:  Creates a cheeseburger using producers and consumers. Creates
+                  three milk consumers, two cheese consumers and one burger consumer.
+                  Uses bounded buffer to store and consume items.  The semaphore.h library
+                  is used to synchronize buffer access.
+*/
 #include <iostream>
 #include <pthread.h>
 #include <stdlib.h>
@@ -7,7 +18,7 @@
 
 using namespace std;
 
-#define dbg(s) cerr << s << endl;
+#define dbg(s) cerr << s << endl;   // Debug Output
 
 #define MILK_THREADS 3
 #define CHEESE_THREADS 2
@@ -19,33 +30,29 @@ using namespace std;
 int bufferMilk[MILK_BUFFER_SIZE] = {0};
 int bufferCheese[CHEESE_BUFFER_SIZE] = {0};
 
+// Milk Producer Variables
 sem_t bufferMilkMutex;
 sem_t bufferMilkFull;
 sem_t bufferMilkEmpty;
 int bufferMilkIn = 0;
 int bufferMilkOut = 0;
 
+// Cheese Producer Variables
 sem_t bufferCheeseMutex;
 sem_t bufferCheeseFull;
 sem_t bufferCheeseEmpty;
 int bufferCheeseIn = 0;
 int bufferCheeseOut = 0;
 
+// Burger Producer Variable
 pthread_mutex_t burgerOut;
 
+// Producer Thread Argument
 struct ProducerArg
 {
     int id;
     int quantity;
 };
-
-void printBuffer(int buf[], int size)
-{
-    for(int i = 0; i < size; i++)
-    {
-        cout << buf[i] << endl;
-    }
-}
 
 void *milkProducer(void *param)
 {
@@ -53,12 +60,12 @@ void *milkProducer(void *param)
     int id = args.id;
     int quantity = args.quantity;
 
-    for(int i = 0; i < (quantity * 2); i++)
+    for(int i = 0; i < (quantity * 2); i++) //Produce 3 milk per burger
     {
         sem_wait(&bufferMilkEmpty);
         sem_wait(&bufferMilkMutex);
-        bufferMilk[bufferMilkIn] = id;
-        bufferMilkIn = (bufferMilkIn + 1) % MILK_BUFFER_SIZE;
+        bufferMilk[bufferMilkIn] = id;                          // add milk to buffer
+        bufferMilkIn = (bufferMilkIn + 1) % MILK_BUFFER_SIZE;   // move back of buffer
         sem_post(&bufferMilkMutex);
         sem_post(&bufferMilkFull);
     }
@@ -81,8 +88,8 @@ void *cheeseProducer(void *param)
         {
             sem_wait(&bufferMilkFull);
             sem_wait(&bufferMilkMutex);
-            cheeseId += to_string(bufferMilk[bufferMilkOut]);
-            bufferMilkOut = (bufferMilkOut + 1) % MILK_BUFFER_SIZE;
+            cheeseId += to_string(bufferMilk[bufferMilkOut]);       // add one milk to cheese
+            bufferMilkOut = (bufferMilkOut + 1) % MILK_BUFFER_SIZE; // move front of buffer
             sem_post(&bufferMilkMutex);
             sem_post(&bufferMilkEmpty);
         }
@@ -91,9 +98,9 @@ void *cheeseProducer(void *param)
         sem_wait(&bufferCheeseEmpty);
         sem_wait(&bufferCheeseMutex);
 
-        cheeseId += to_string(id);
-        bufferCheese[bufferCheeseIn] = stoi(cheeseId);
-        bufferCheeseIn = (bufferCheeseIn + 1) % CHEESE_BUFFER_SIZE;
+        cheeseId += to_string(id);                                  // add cheese id to cheese
+        bufferCheese[bufferCheeseIn] = stoi(cheeseId);              // convert to int
+        bufferCheeseIn = (bufferCheeseIn + 1) % CHEESE_BUFFER_SIZE; // move back of buffer
 
         sem_post(&bufferCheeseMutex);
         sem_post(&bufferCheeseFull);
@@ -116,15 +123,15 @@ void *burgerProducer(void *param)
             sem_wait(&bufferCheeseFull);
             sem_wait(&bufferCheeseMutex);
 
-            burgerId += to_string(bufferCheese[bufferCheeseOut]);
-            bufferCheeseOut = (bufferCheeseOut + 1) % CHEESE_BUFFER_SIZE;
+            burgerId += to_string(bufferCheese[bufferCheeseOut]);           // add cheese to burger
+            bufferCheeseOut = (bufferCheeseOut + 1) % CHEESE_BUFFER_SIZE;   // change front of buffer
 
             sem_post(&bufferCheeseMutex);
             sem_post(&bufferCheeseEmpty);   
         }
 
         pthread_mutex_lock(&burgerOut);
-        cout << burgerId << endl;
+        cout << burgerId << endl;                                           // output burger
         pthread_mutex_unlock(&burgerOut);
     }
 
@@ -133,6 +140,7 @@ void *burgerProducer(void *param)
 
 int main()
 {
+    // Initialize semophores
     sem_init(&bufferMilkEmpty, 0, MILK_BUFFER_SIZE);
     sem_init(&bufferMilkFull, 0, 0);
     sem_init(&bufferMilkMutex, 0, 1);
@@ -149,10 +157,12 @@ int main()
     ProducerArg* arg;
     int numBurgers = 0;
 
+    // Get number of burgers to produce
     cout << "Enter number of burgers -> ";
     cin >> numBurgers;
     cout << endl;
 
+    // Create milk threads
     for(int i = 0; i < MILK_THREADS; i++)
     {
         arg = (ProducerArg*)malloc(sizeof(*arg));
@@ -164,7 +174,7 @@ int main()
         threadIDsIndex++;
     }                                                         
 
-
+    // Create cheese threads
     for(int i = 0; i < CHEESE_THREADS; i++)
     {
         arg = (ProducerArg*)malloc(sizeof(*arg));
@@ -176,6 +186,7 @@ int main()
         threadIDsIndex++;
     }
 
+    // Create burger thread
     int* numPtr = (int*)malloc(sizeof(int*));
     *numPtr = numBurgers;
 
@@ -183,6 +194,7 @@ int main()
     pthread_create(&threadIDs[threadIDsIndex], &attr, burgerProducer, numPtr);
     threadIDsIndex++;
 
+    // Join threads
     for(int i = 0; i < threadIDsIndex; i++)
     {
         pthread_join(threadIDs[i], NULL);

@@ -1,0 +1,14 @@
+Joel Byers
+Assignment 2
+Cheeseburger Threads Report
+
+    Developed program with Ubuntu 20.04.3 and compiled
+    with G++
+
+    To Compile:
+
+        "g++ -pthread CheeseBurger.cpp"
+
+    To Run:
+
+        "./a.out"
