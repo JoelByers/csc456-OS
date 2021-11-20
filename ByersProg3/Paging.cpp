@@ -8,6 +8,7 @@ using namespace std;
 void parseLine(string in, string* out);
 int memoryManager(int memSize, int frameSize);
 int allocate(int allocSize, int pid);
+int deallocate(int pid);
 void printMemory();
 void dbg(string s);
 
@@ -50,9 +51,18 @@ int main()
         {
             int success = allocate(stoi(command[1]), stoi(command[2]));
 
-            if(!success)
+            if(success == -1)
             {
                 cout << "Unable to allocate memory: Not enough free frames" << endl;
+            }
+        }
+        else if(command[0] == "D")
+        {
+            int success = deallocate(stoi(command[1]));
+
+            if(success == -1)
+            {
+                cout << "Unable to deallocate memory: Process not found" << endl;
             }
         }
         else if (userInput != "quit")
@@ -114,7 +124,7 @@ int allocate(int allocSize, int pid)
 
     random_device random; // obtain a random number from hardware
     mt19937 seed(random()); // seed the generator
-    uniform_int_distribution<> distributor(0, freeFrameList.size()); // define the range
+    uniform_int_distribution<> distributor(0, freeFrameList.size() - 1); // define the range
 
     // verify there are enough free frames
     if(freeFrameList.size() - pageTable.size() >= allocSize)
@@ -130,10 +140,11 @@ int allocate(int allocSize, int pid)
             
             // if frame is not in page table
             if(listItr == pageTable.end())
-            {
-                pageTable.push_back(frameNumber);               // add frame to page table
-                newProcess.pages.push_front(pageTable.size());  // add page to process
-                i++;                                            // move on to next frame
+            {  
+                cout << frameNumber << " " << pageTable.size()<< endl;
+                pageTable.push_back(frameNumber);                   // add frame to page table
+                newProcess.pages.push_front(pageTable.size());      // add page to process
+                i++;                                                // move on to next frame
             }
         }
 
@@ -147,18 +158,54 @@ int allocate(int allocSize, int pid)
     return returnValue;
 }
 
+int deallocate(int pid)
+{
+    int returnValue = 1;
+    list<Process>::iterator pListIter;
+    list<int>::iterator pageTableIter;
+
+    // search each process for pid
+    pListIter = find_if(processList.begin(), processList.end(),
+    [pid] (const Process& p) 
+    {
+        return p.pid == pid;
+    });
+
+    // if pid found
+    if(pListIter != processList.end())
+    {
+        // for every page in process
+        for(int i : pListIter->pages)
+        {
+            pageTableIter = pageTable.begin();  // set iterator to start of page table
+            advance(pageTableIter, i);          // go the page index i
+            cout << *pageTableIter << endl;
+            pageTable.erase(pageTableIter);     // remove from page at index i from table
+        }
+
+        processList.erase(pListIter);
+    }
+    else
+    {
+        returnValue = -1;
+    }
+
+    return returnValue;
+}
+
 void printMemory()
 {
     list<Process>::iterator pListItr;
-    list<int>::iterator iListItr;
+    list<int>::iterator pageTableItr;
 
-    cout << endl << "Free Frames    :";
-
+    cout << endl << "Free Frames    : ";
+    
     for(int i = 0; i < freeFrameList.size(); i++)
     {
-        iListItr = find(pageTable.begin(), pageTable.end(), i);
+        // using i because it's searching for the frame index
+        pageTableItr = find(pageTable.begin(), pageTable.end(), i);
 
-        if(iListItr == pageTable.end())
+        if(pageTableItr == pageTable.end())
         {
             cout << i << ", ";
         }
