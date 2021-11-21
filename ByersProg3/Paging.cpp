@@ -107,22 +107,22 @@ void parseLine(string in, string* out)
     string nextString = "";
     list<string>::iterator listItr;
 
-    for(int i = 0; i < in.length(); i++)
+    for(int i = 0; i < in.length(); i++)    // for every char in input string
     {
-        if(in.at(i) == ' ')
+        if(in.at(i) == ' ')                 // if the char is a space
         {
-            listOut.push_back(nextString);
-            nextString = "";
-            i++;
+            listOut.push_back(nextString);  // add the compiled string to the output list
+            nextString = "";                // reset compiled string
+            i++;                            // skip space
         }
 
-        nextString += in.at(i);
+        nextString += in.at(i);             // add char to compiled string
     }
 
-    listOut.push_back(nextString);
+    listOut.push_back(nextString);          // add last string
     listItr = listOut.begin();
 
-    for(int i = 0; i < listOut.size(); i++)
+    for(int i = 0; i < listOut.size(); i++) //convert to array
     {
         out[i] = *listItr;
         advance(listItr, 1);
@@ -133,6 +133,7 @@ int memoryManager(int memSize, int frameSize)
 {
     int success = 1;
 
+    // add frames to free frame list
     for(int i = 0; i < memSize; i++)
     {
         freeFrameList.push_back(0);
