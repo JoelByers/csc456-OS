@@ -237,7 +237,7 @@ int write(int pid, int logicalAddress)
         if(logicalAddress < pListIter->pages.size())
         {
             iterListIter = pListIter->pages.begin();    // get page list
-            advance(iListIter, logicalAddress);         // get pointer to page table element
+            advance(iterListIter, logicalAddress);      // get pointer to page table element
             iListIter = freeFrameList.begin();          // get frame list
             advance(iListIter, **iterListIter);         // go to frame specified in page table
             *iListIter = 1;
@@ -263,8 +263,8 @@ int read(int pid, int logicalAddress)
     int returnValue = 1;
 
     pListIter = find_if(processList.begin(), processList.end(), // find the process
-    [pid] (const Process& p) 
-    {
+    [pid] (const Process& p)                                    
+    {                                                           // lambda expression, returns true if pids match
         return p.pid == pid;
     });
 
@@ -274,7 +274,7 @@ int read(int pid, int logicalAddress)
         if(logicalAddress < pListIter->pages.size())
         {
             iterListIter = pListIter->pages.begin();    // get page list
-            advance(iListIter, logicalAddress);         // get pointer to page table element
+            advance(iterListIter, logicalAddress);      // get pointer to page table element
             iListIter = freeFrameList.begin();          // get frame list
             advance(iListIter, **iterListIter);         // go to frame specified in page table
             cout << *iListIter << endl;
@@ -288,8 +288,6 @@ int read(int pid, int logicalAddress)
     {
         returnValue = -1;
     }
-
-    return returnValue;
 
     return returnValue;
 }
