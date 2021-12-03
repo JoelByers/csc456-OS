@@ -22,12 +22,13 @@ void dbgProcess();
 struct Process
 {
     int pid = -1;
-    list<list<int>::iterator> pages;
+    list<int> pages;
 };
 
+int nextFrameNum = 0;
 list<int> freeFrameList;
 list<Process> processList;
-list<int> pageTable;
+list<int> memory;
 
 int main()
 {
@@ -136,7 +137,9 @@ int memoryManager(int memSize, int frameSize)
     // add frames to free frame list
     for(int i = 0; i < memSize; i++)
     {
-        freeFrameList.push_back(0);
+        freeFrameList.push_back(nextFrameNum);
+        memory.push_back(0);
+        nextFrameNum++;
     }
 
     return success; 
@@ -151,10 +154,11 @@ int allocate(int allocSize, int pid)
 
     random_device random; // obtain a random number from hardware
     mt19937 seed(random()); // seed the generator
-    uniform_int_distribution<> distributor(0, freeFrameList.size() - 1); // define the range
+    uniform_int_distribution<> distributor(0, nextFrameNum - 1); // define the range based on total number of frames
 
     // verify there are enough free frames
-    if(freeFrameList.size() - pageTable.size() >= allocSize)
+    //if(freeFrameList.size() - pageTable.size() >= allocSize)
+    if(freeFrameList.size() >= allocSize)
     {
         int frameNumber;
         list<int>::iterator listItr;
@@ -162,15 +166,16 @@ int allocate(int allocSize, int pid)
         // for every frame we're trying to add
         for(int i = 0; i < allocSize; i)
         {
-            frameNumber = distributor(seed);                                    // get random frame
-            listItr = find(pageTable.begin(), pageTable.end(), frameNumber);    // search for it in page table
+            frameNumber = distributor(seed);                                            // get random frame
+            listItr = find(freeFrameList.begin(), freeFrameList.end(), frameNumber);    // search for it in free frames
             
-            // if frame is not in page table
-            if(listItr == pageTable.end())
+            // if frame is in free frame list
+            if(listItr != freeFrameList.end())
             {  
                 //cout << "FRAME " << frameNumber << " PAGE " << pageTable.size() << endl;
-                pageTable.push_back(frameNumber);                   // add frame to page table
-                newProcess.pages.push_back(--pageTable.end());      // add page to process
+                //pageTable.push_back(frameNumber);                   // add frame to page table
+                newProcess.pages.push_back(frameNumber);               // add frame to process
+                freeFrameList.erase(listItr);                       // remove frame from free frame list
                 i++;                                                // move on to next frame
             }
         }
@@ -203,9 +208,10 @@ int deallocate(int pid)
     if(pListIter != processList.end())
     {
         // for every page in process
-        for(list<int>::iterator page : pListIter->pages)
+        for(int page : pListIter->pages)
         {
-            pageTable.erase(page);     // remove page from table
+            freeFrameList.push_back(page);
+            //pageTable.erase(page);     // remove page from table
         }
 
         processList.erase(pListIter);
@@ -236,11 +242,22 @@ int write(int pid, int logicalAddress)
     {
         if(logicalAddress < pListIter->pages.size())
         {
+            int frame;
+
+            iListIter = pListIter->pages.begin();
+            advance(iListIter, logicalAddress);
+            frame = *iListIter;
+            iListIter = memory.begin();
+            advance(iListIter, frame);
+            *iListIter = 1;
+
+            /*
             iterListIter = pListIter->pages.begin();    // get page list
             advance(iterListIter, logicalAddress);      // get pointer to page table element
             iListIter = freeFrameList.begin();          // get frame list
             advance(iListIter, **iterListIter);         // go to frame specified in page table
             *iListIter = 1;
+            */
         }
         else
         {
@@ -263,8 +280,8 @@ int read(int pid, int logicalAddress)
     int returnValue = 1;
 
     pListIter = find_if(processList.begin(), processList.end(), // find the process
-    [pid] (const Process& p)                                    
-    {                                                           // lambda expression, returns true if pids match
+    [pid] (const Process& p) 
+    {
         return p.pid == pid;
     });
 
@@ -273,11 +290,22 @@ int read(int pid, int logicalAddress)
     {
         if(logicalAddress < pListIter->pages.size())
         {
+            int frame;
+
+            iListIter = pListIter->pages.begin();
+            advance(iListIter, logicalAddress);
+            frame = *iListIter;
+            iListIter = memory.begin();
+            advance(iListIter, frame);
+            cout << *iListIter << endl;
+
+            /*
             iterListIter = pListIter->pages.begin();    // get page list
             advance(iterListIter, logicalAddress);      // get pointer to page table element
             iListIter = freeFrameList.begin();          // get frame list
             advance(iListIter, **iterListIter);         // go to frame specified in page table
-            cout << *iListIter << endl;
+            *iListIter = 1;
+            */
         }
         else
         {
@@ -295,18 +323,16 @@ int read(int pid, int logicalAddress)
 void printMemory()
 {
     list<Process>::iterator pListItr;
-    list<int>::iterator pageTableItr;
+    list<int>::iterator iListIter;
 
     cout << "----------------" << endl << "Free Frames    : ";
     
+    iListIter = freeFrameList.begin();
+
     for(int i = 0; i < freeFrameList.size(); i++)   // for all free frames
     {
-        pageTableItr = find(pageTable.begin(), pageTable.end(), i);
-
-        if(pageTableItr == pageTable.end())         // frame isn't in page table
-        {
-            cout << i << ", ";                      // list it as free
-        }
+        cout << *iListIter << ",";  
+        iListIter++;  
     }
 
     cout << endl << "----------------" <<  endl << "Processes" << endl << "PID            |";
@@ -338,9 +364,9 @@ void dbgProcess()
 {
     list<list<int>::iterator>::iterator iter;
 
-    cout << "pageTable -> ";
+    cout << "Memory -> ";
 
-    for(int frame : pageTable)
+    for(int frame : memory)
     {
         cout << frame << ",";
     }
@@ -351,9 +377,9 @@ void dbgProcess()
     {
         cout << "PID " << p.pid << " ->";
 
-        for(list<int>::iterator page : p.pages)
+        for(int page : p.pages)
         {
-            cout << *page << ",";
+            cout << page << ",";
         }
 
         cout << endl;
