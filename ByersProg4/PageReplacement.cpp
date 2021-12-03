@@ -3,22 +3,12 @@
 // Due 11/21/21
 
 #include <iostream>
+#include <string>
 #include <list>
 #include <random>
 #include <algorithm>
 
 using namespace std;
-
-void parseLine(string in, string* out);
-int memoryManager(int memSize, int frameSize);
-int allocate(int allocSize, int pid);
-int deallocate(int pid);
-int getVictom();
-void printMemory();
-int write(int pid, int logicalAddress);
-int read(int pid, int logicalAddress);
-void dbg(string s);
-void dbgProcess();
 
 struct Page
 {
@@ -37,6 +27,18 @@ struct LRUData
     int pid;
     int page;
 };
+
+void parseLine(string in, string* out);
+int memoryManager(int memSize, int frameSize);
+int allocate(int allocSize, int pid);
+int deallocate(int pid);
+int getVictom();
+void givePageToProcess(int frameNumber, int pid, Process &newProcess);
+void printMemory();
+int write(int pid, int logicalAddress);
+int read(int pid, int logicalAddress);
+void dbg(string s);
+void dbgProcess();
 
 list<int> freeFrameList;
 list<Process> processList;
@@ -172,38 +174,42 @@ int allocate(int allocSize, int pid)
     uniform_int_distribution<> distributor(0, nextFrameNum - 1); // define the range based on total number of frames
 
     int frameNumber;
-    list<int>::iterator listItr;
+    list<int>::iterator freeFrameIter;
 
-    // for every frame we're trying to add
-    for(int i = 0; i < allocSize; i)
+    if(allocSize <= nextFrameNum)   // ensure enough frames exist in memory
     {
-        // if there are free frames
-        if(freeFrameList.size() > 0)
+        // for every frame we're trying to add
+        for(int i = 0; i < allocSize; i)
         {
-            frameNumber = distributor(seed);                                            // get random frame
-            listItr = find(freeFrameList.begin(), freeFrameList.end(), frameNumber);    // search for it in free frames
-                
-            // if frame is in free frame list
-            if(listItr != freeFrameList.end())
-            {  
-                Page newPage;
-                LRUData newData;
-                newPage.num = frameNumber;                      // add frame number to page
-                newData.page = frameNumber;                     // add frame number to LRU data
-                newData.pid = pid;                              // add PID to LRU data
-                newProcess.pages.push_back(newPage);            // add frame to process
-                LRUStack.push_front(newData);                   // push page and PID to LRU Stack
-                freeFrameList.erase(listItr);                   // remove frame from free frame list
-                i++;                                            // move on to next frame
+            // if there are free frames
+            if(freeFrameList.size() > 0)
+            {
+                frameNumber = distributor(seed);                                                // get random frame
+                freeFrameIter = find(freeFrameList.begin(), freeFrameList.end(), frameNumber);  // search for it in free frames
+                    
+                // if frame is in free frame list
+                if(freeFrameIter != freeFrameList.end())
+                {  
+                    freeFrameList.erase(freeFrameIter);                 // remove frame from free frame list
+                    
+                    givePageToProcess(frameNumber, pid, newProcess);    // fill page table and LRU stack
+                    i++;                                                // move on to next frame
+                }
+            }
+            else    // page replacement
+            {
+                frameNumber = getVictom();                              // get victom frame and set valid bit 
+                givePageToProcess(frameNumber, pid, newProcess);        // fill page table and LRU stack
+                i++;                                                    // move on to next frame
             }
         }
-        else    // page replacement
-        {
-            int victomFrame = getVictom();
-        }
-    }
 
-    processList.push_front(newProcess);
+        processList.push_front(newProcess);     // add process to process list
+    }
+    else    // not enough frames
+    {
+        returnValue = -1;
+    }
 
     return returnValue;
 }
@@ -324,6 +330,9 @@ int read(int pid, int logicalAddress)
 
 int getVictom()
 {
+    // return frame from victom,
+    // also sets victom page to invalid
+
     list<Process>::iterator proListIter;
     list<LRUData>::iterator lastPageIter;
     list<Page>::iterator pgeListIter;
@@ -333,12 +342,35 @@ int getVictom()
     victomFrameNum = lastPageIter->page;
 
     // assume pid and page exist, find them
-    proListIter = find(processList.begin(), processList.end(), lastPageIter->pid);
-    pgeListIter = find(proListIter->pages.begin(), proListIter->pages.end(), lastPageIter->page);
+    // find process
+    proListIter = find_if(processList.begin(), processList.end(), 
+    [lastPageIter] (const Process& pro)
+    {
+        return pro.pid == lastPageIter->pid;
+    });
+
+    //find page
+    pgeListIter = find_if(proListIter->pages.begin(), proListIter->pages.end(), 
+    [victomFrameNum] (const Page& pge)
+    {
+        return pge.num == victomFrameNum;
+    });
+
     pgeListIter->valid = false;         // set previous owner page to invalid
     LRUStack.erase(lastPageIter);       // remove last element from LRU stack
 
     return victomFrameNum;
+}
+
+void givePageToProcess(int frameNumber, int pid, Process &newProcess)
+{
+    Page newPage;
+    LRUData newData;
+    newPage.num = frameNumber;                      // add frame number to page
+    newData.page = frameNumber;                     // add frame number to LRU data
+    newData.pid = pid;                              // add PID to LRU data
+    newProcess.pages.push_back(newPage);            // add frame to process
+    LRUStack.push_front(newData);                   // push page and PID to LRU Stack
 }
 
 void printMemory()
