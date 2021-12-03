@@ -13,22 +13,37 @@ void parseLine(string in, string* out);
 int memoryManager(int memSize, int frameSize);
 int allocate(int allocSize, int pid);
 int deallocate(int pid);
+int getVictom();
 void printMemory();
 int write(int pid, int logicalAddress);
 int read(int pid, int logicalAddress);
 void dbg(string s);
 void dbgProcess();
 
+struct Page
+{
+    int num;
+    bool valid = true;
+};
+
 struct Process
 {
     int pid = -1;
-    list<int> pages;
+    list<Page> pages;
 };
 
-int nextFrameNum = 0;
+struct LRUData
+{
+    int pid;
+    int page;
+};
+
 list<int> freeFrameList;
 list<Process> processList;
 list<int> memory;
+list<LRUData> LRUStack;
+
+int nextFrameNum = 0;
 
 int main()
 {
@@ -156,36 +171,39 @@ int allocate(int allocSize, int pid)
     mt19937 seed(random()); // seed the generator
     uniform_int_distribution<> distributor(0, nextFrameNum - 1); // define the range based on total number of frames
 
-    // verify there are enough free frames
-    //if(freeFrameList.size() - pageTable.size() >= allocSize)
-    if(freeFrameList.size() >= allocSize)
-    {
-        int frameNumber;
-        list<int>::iterator listItr;
+    int frameNumber;
+    list<int>::iterator listItr;
 
-        // for every frame we're trying to add
-        for(int i = 0; i < allocSize; i)
+    // for every frame we're trying to add
+    for(int i = 0; i < allocSize; i)
+    {
+        // if there are free frames
+        if(freeFrameList.size() > 0)
         {
             frameNumber = distributor(seed);                                            // get random frame
             listItr = find(freeFrameList.begin(), freeFrameList.end(), frameNumber);    // search for it in free frames
-            
+                
             // if frame is in free frame list
             if(listItr != freeFrameList.end())
             {  
-                //cout << "FRAME " << frameNumber << " PAGE " << pageTable.size() << endl;
-                //pageTable.push_back(frameNumber);                   // add frame to page table
-                newProcess.pages.push_back(frameNumber);               // add frame to process
-                freeFrameList.erase(listItr);                       // remove frame from free frame list
-                i++;                                                // move on to next frame
+                Page newPage;
+                LRUData newData;
+                newPage.num = frameNumber;                      // add frame number to page
+                newData.page = frameNumber;                     // add frame number to LRU data
+                newData.pid = pid;                              // add PID to LRU data
+                newProcess.pages.push_back(newPage);            // add frame to process
+                LRUStack.push_front(newData);                   // push page and PID to LRU Stack
+                freeFrameList.erase(listItr);                   // remove frame from free frame list
+                i++;                                            // move on to next frame
             }
         }
+        else    // page replacement
+        {
+            int victomFrame = getVictom();
+        }
+    }
 
-        processList.push_front(newProcess);
-    }
-    else
-    {
-        returnValue = -1;
-    }
+    processList.push_front(newProcess);
 
     return returnValue;
 }
@@ -208,10 +226,9 @@ int deallocate(int pid)
     if(pListIter != processList.end())
     {
         // for every page in process
-        for(int page : pListIter->pages)
+        for(Page page : pListIter->pages)
         {
-            freeFrameList.push_back(page);
-            //pageTable.erase(page);     // remove page from table
+            freeFrameList.push_back(page.num);
         }
 
         processList.erase(pListIter);
@@ -226,38 +243,30 @@ int deallocate(int pid)
 
 int write(int pid, int logicalAddress)
 {
-    list<Process>::iterator pListIter;
+    list<Process>::iterator proListIter;
+    list<Page>::iterator pgeListIter;
     list<int>::iterator iListIter;
-    list<list<int>::iterator>::iterator iterListIter;
     int returnValue = 1;
 
-    pListIter = find_if(processList.begin(), processList.end(), // find the process
+    proListIter = find_if(processList.begin(), processList.end(), // find the process
     [pid] (const Process& p) 
     {
         return p.pid == pid;
     });
 
     // if process exists
-    if(pListIter != processList.end())
+    if(proListIter != processList.end())
     {
-        if(logicalAddress < pListIter->pages.size())
+        if(logicalAddress < proListIter->pages.size())
         {
             int frame;
 
-            iListIter = pListIter->pages.begin();
-            advance(iListIter, logicalAddress);
-            frame = *iListIter;
+            pgeListIter = proListIter->pages.begin();
+            advance(pgeListIter, logicalAddress);
+            frame = pgeListIter->num;
             iListIter = memory.begin();
             advance(iListIter, frame);
             *iListIter = 1;
-
-            /*
-            iterListIter = pListIter->pages.begin();    // get page list
-            advance(iterListIter, logicalAddress);      // get pointer to page table element
-            iListIter = freeFrameList.begin();          // get frame list
-            advance(iListIter, **iterListIter);         // go to frame specified in page table
-            *iListIter = 1;
-            */
         }
         else
         {
@@ -274,38 +283,31 @@ int write(int pid, int logicalAddress)
 
 int read(int pid, int logicalAddress)
 {
-    list<Process>::iterator pListIter;
+    list<Process>::iterator proListIter;
+    list<Page>::iterator pgeListIter;
     list<int>::iterator iListIter;
-    list<list<int>::iterator>::iterator iterListIter;
     int returnValue = 1;
 
-    pListIter = find_if(processList.begin(), processList.end(), // find the process
+    proListIter = find_if(processList.begin(), processList.end(), // find the process
     [pid] (const Process& p) 
     {
         return p.pid == pid;
     });
 
     // if process exists
-    if(pListIter != processList.end())
+    if(proListIter != processList.end())
     {
-        if(logicalAddress < pListIter->pages.size())
+        if(logicalAddress < proListIter->pages.size())
         {
             int frame;
 
-            iListIter = pListIter->pages.begin();
-            advance(iListIter, logicalAddress);
-            frame = *iListIter;
+            pgeListIter = proListIter->pages.begin();
+            advance(pgeListIter, logicalAddress);
+            frame = pgeListIter->num;
             iListIter = memory.begin();
             advance(iListIter, frame);
             cout << *iListIter << endl;
 
-            /*
-            iterListIter = pListIter->pages.begin();    // get page list
-            advance(iterListIter, logicalAddress);      // get pointer to page table element
-            iListIter = freeFrameList.begin();          // get frame list
-            advance(iListIter, **iterListIter);         // go to frame specified in page table
-            *iListIter = 1;
-            */
         }
         else
         {
@@ -318,6 +320,25 @@ int read(int pid, int logicalAddress)
     }
 
     return returnValue;
+}
+
+int getVictom()
+{
+    list<Process>::iterator proListIter;
+    list<LRUData>::iterator lastPageIter;
+    list<Page>::iterator pgeListIter;
+    int victomFrameNum;
+    
+    lastPageIter = --LRUStack.end();    // get last element
+    victomFrameNum = lastPageIter->page;
+
+    // assume pid and page exist, find them
+    proListIter = find(processList.begin(), processList.end(), lastPageIter->pid);
+    pgeListIter = find(proListIter->pages.begin(), proListIter->pages.end(), lastPageIter->page);
+    pgeListIter->valid = false;         // set previous owner page to invalid
+    LRUStack.erase(lastPageIter);       // remove last element from LRU stack
+
+    return victomFrameNum;
 }
 
 void printMemory()
@@ -377,13 +398,31 @@ void dbgProcess()
     {
         cout << "PID " << p.pid << " ->";
 
-        for(int page : p.pages)
+        for(Page page : p.pages)
         {
-            cout << page << ",";
+            cout << page.num << (page.valid ? "T" : "F"); 
+            cout << ",";
         }
 
         cout << endl;
     }
+
+    cout << "LRU Stack" << endl;
+    cout << "PID :";
+
+    for(LRUData d : LRUStack)
+    {
+        cout << d.pid << "|";
+    } 
+
+    cout << endl << "Page:";
+
+    for(LRUData d : LRUStack)
+    {
+        cout << d.page << "|";
+    } 
+
+    cout << endl;
 }
 
 void dbg(string s)
