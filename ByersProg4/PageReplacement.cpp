@@ -34,6 +34,7 @@ int allocate(int allocSize, int pid);
 int deallocate(int pid);
 int getVictom();
 void givePageToProcess(int frameNumber, int pid, Process &newProcess);
+void updateLRUStack(int pid, int page);
 void printMemory();
 int write(int pid, int logicalAddress);
 int read(int pid, int logicalAddress);
@@ -176,40 +177,33 @@ int allocate(int allocSize, int pid)
     int frameNumber;
     list<int>::iterator freeFrameIter;
 
-    if(allocSize <= nextFrameNum)   // ensure enough frames exist in memory
-    {
         // for every frame we're trying to add
-        for(int i = 0; i < allocSize; i)
-        {
+    for(int i = 0; i < allocSize; i)
+    {
             // if there are free frames
-            if(freeFrameList.size() > 0)
-            {
-                frameNumber = distributor(seed);                                                // get random frame
-                freeFrameIter = find(freeFrameList.begin(), freeFrameList.end(), frameNumber);  // search for it in free frames
+        if(freeFrameList.size() > 0)
+        {
+            frameNumber = distributor(seed);                                                // get random frame
+            freeFrameIter = find(freeFrameList.begin(), freeFrameList.end(), frameNumber);  // search for it in free frames
                     
-                // if frame is in free frame list
-                if(freeFrameIter != freeFrameList.end())
-                {  
-                    freeFrameList.erase(freeFrameIter);                 // remove frame from free frame list
+            // if frame is in free frame list
+            if(freeFrameIter != freeFrameList.end())
+            {  
+                freeFrameList.erase(freeFrameIter);                 // remove frame from free frame list
                     
-                    givePageToProcess(frameNumber, pid, newProcess);    // fill page table and LRU stack
-                    i++;                                                // move on to next frame
-                }
-            }
-            else    // page replacement
-            {
-                frameNumber = getVictom();                              // get victom frame and set valid bit 
-                givePageToProcess(frameNumber, pid, newProcess);        // fill page table and LRU stack
-                i++;                                                    // move on to next frame
+                givePageToProcess(frameNumber, pid, newProcess);    // fill page table and LRU stack
+                i++;                                                // move on to next frame
             }
         }
+        else    // page replacement
+        {
+            frameNumber = getVictom();                              // get victom frame and set valid bit 
+            givePageToProcess(frameNumber, pid, newProcess);        // fill page table and LRU stack
+            i++;                                                    // move on to next frame
+        }
+    }
 
-        processList.push_front(newProcess);     // add process to process list
-    }
-    else    // not enough frames
-    {
-        returnValue = -1;
-    }
+    processList.push_front(newProcess);     // add process to process list
 
     return returnValue;
 }
@@ -217,9 +211,12 @@ int allocate(int allocSize, int pid)
 int deallocate(int pid)
 {
     int returnValue = 1;
+    int originalStackSize;
     list<Process>::iterator pListIter;
     list<int>::iterator iListIter2;
     list<int>::iterator pageTableIter;
+    list<LRUData>::iterator lruStackIter;
+    list<LRUData>::iterator tempStackIter;
 
     // search each process for pid
     pListIter = find_if(processList.begin(), processList.end(),
@@ -238,6 +235,25 @@ int deallocate(int pid)
         }
 
         processList.erase(pListIter);
+
+        // remove all process pages from stack
+        lruStackIter = LRUStack.begin();
+        originalStackSize = LRUStack.size();
+
+        for(int i = 0; i < originalStackSize; i++)
+        {
+            if(lruStackIter->pid == pid)            // if page has pid being deallocated
+            {
+                tempStackIter = lruStackIter;       // get temp iterator to element
+                tempStackIter++;                    // increment temp
+                LRUStack.erase(lruStackIter);       // erase original element
+                lruStackIter = tempStackIter;       // resore original variable
+            }
+            else
+            {
+                lruStackIter++;                     // move to next element
+            }
+        }
     }
     else
     {
@@ -251,7 +267,7 @@ int write(int pid, int logicalAddress)
 {
     list<Process>::iterator proListIter;
     list<Page>::iterator pgeListIter;
-    list<int>::iterator iListIter;
+    list<int>::iterator memoryIter;
     int returnValue = 1;
 
     proListIter = find_if(processList.begin(), processList.end(), // find the process
@@ -260,19 +276,29 @@ int write(int pid, int logicalAddress)
         return p.pid == pid;
     });
 
-    // if process exists
-    if(proListIter != processList.end())
+    if(proListIter != processList.end())                        // if process exists
     {
-        if(logicalAddress < proListIter->pages.size())
+        if(logicalAddress < proListIter->pages.size())          // if the page exists
         {
             int frame;
 
             pgeListIter = proListIter->pages.begin();
-            advance(pgeListIter, logicalAddress);
-            frame = pgeListIter->num;
-            iListIter = memory.begin();
-            advance(iListIter, frame);
-            *iListIter = 1;
+            advance(pgeListIter, logicalAddress);               // find page      
+
+            if(!pgeListIter->valid)                             // if invalid
+            {
+                pgeListIter->num = getVictom();                 // get victom, LRU Stack is updated 
+                pgeListIter->valid = true;                      // set to valid
+            }
+            else
+            {
+                updateLRUStack(pid, pgeListIter->num);          // update LRU Stack
+            } 
+
+            frame = pgeListIter->num;                           // get frame number
+            memoryIter = memory.begin();
+            advance(memoryIter, frame);                         // find frame in memory
+            *memoryIter = 1;                                    // write 1
         }
         else
         {
@@ -289,9 +315,9 @@ int write(int pid, int logicalAddress)
 
 int read(int pid, int logicalAddress)
 {
-    list<Process>::iterator proListIter;
+   list<Process>::iterator proListIter;
     list<Page>::iterator pgeListIter;
-    list<int>::iterator iListIter;
+    list<int>::iterator memoryIter;
     int returnValue = 1;
 
     proListIter = find_if(processList.begin(), processList.end(), // find the process
@@ -300,20 +326,29 @@ int read(int pid, int logicalAddress)
         return p.pid == pid;
     });
 
-    // if process exists
-    if(proListIter != processList.end())
+    if(proListIter != processList.end())                        // if process exists
     {
-        if(logicalAddress < proListIter->pages.size())
+        if(logicalAddress < proListIter->pages.size())          // if the page exists
         {
             int frame;
 
             pgeListIter = proListIter->pages.begin();
-            advance(pgeListIter, logicalAddress);
-            frame = pgeListIter->num;
-            iListIter = memory.begin();
-            advance(iListIter, frame);
-            cout << *iListIter << endl;
+            advance(pgeListIter, logicalAddress);               // find page      
 
+            if(!pgeListIter->valid)                             // if invalid
+            {
+                pgeListIter->num = getVictom();                 // get victom, LRU Stack is updated 
+                pgeListIter->valid = true;                      // set to valid
+            }
+            else
+            {
+                updateLRUStack(pid, pgeListIter->num);          // update LRU Stack
+            } 
+
+            frame = pgeListIter->num;                           // get frame number
+            memoryIter = memory.begin();
+            advance(memoryIter, frame);                         // find frame in memory
+            cout << *memoryIter << endl;                        // print contents
         }
         else
         {
@@ -338,8 +373,8 @@ int getVictom()
     list<Page>::iterator pgeListIter;
     int victomFrameNum;
     
-    lastPageIter = --LRUStack.end();    // get last element
-    victomFrameNum = lastPageIter->page;
+    lastPageIter = --LRUStack.end();        // get last element
+    victomFrameNum = lastPageIter->page;    // get page number
 
     // assume pid and page exist, find them
     // find process
@@ -373,12 +408,40 @@ void givePageToProcess(int frameNumber, int pid, Process &newProcess)
     LRUStack.push_front(newData);                   // push page and PID to LRU Stack
 }
 
+void updateLRUStack(int pid, int page)
+{
+    list<LRUData>::iterator lruIter;
+
+    lruIter = find_if(LRUStack.begin(), LRUStack.end(),
+    [pid, page](LRUData const& data)
+    {
+        return data.pid == pid && data.page == page;
+    });
+
+    LRUStack.push_front(*lruIter);
+    LRUStack.erase(lruIter);
+}
+
 void printMemory()
 {
     list<Process>::iterator pListItr;
     list<int>::iterator iListIter;
 
-    cout << "----------------" << endl << "Free Frames    : ";
+    cout << "----------------" << endl << "Memory" << endl << "Address        |";
+    
+    for(int i = 0; i < memory.size(); i++)
+    {
+        cout << i << "|";
+    }
+
+    cout << endl << "Value          |";
+
+    for(int bit : memory)
+    {
+        cout << bit << "|";
+    }
+
+    cout << endl <<"----------------" << endl << "Free Frames    :";
     
     iListIter = freeFrameList.begin();
 
@@ -416,15 +479,6 @@ void printMemory()
 void dbgProcess()
 {
     list<list<int>::iterator>::iterator iter;
-
-    cout << "Memory -> ";
-
-    for(int frame : memory)
-    {
-        cout << frame << ",";
-    }
-
-    cout << endl;
 
     for(Process p : processList)
     {
