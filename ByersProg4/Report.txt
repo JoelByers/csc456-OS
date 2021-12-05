@@ -1,0 +1,8 @@
+Assignment 4: Page Replacement
+Joel Byers
+
+Compiling:
+    g++ Paging.cpp
+
+Running:
+    All commands implemented as in assignment.  Also added "quit" to end program
